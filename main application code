@@ -1,0 +1,78 @@
+import cv2
+from deepface import DeepFace
+from flask import Flask, render_template, Response
+import smtplib
+import ssl
+from email.message import EmailMessage
+import os
+import numpy as np
+
+app = Flask(__name__)
+
+# Email configuration
+SENDER_EMAIL = "your_email@gmail.com"        # Use your Gmail
+SENDER_PASSWORD = "your_app_password"        # Use Gmail app password
+RECEIVER_EMAIL = "receiver_email@gmail.com"  # Receiver email
+
+# Ensure dataset directory exists
+os.makedirs("dataset", exist_ok=True)
+
+def send_email_alert(image_path):
+    msg = EmailMessage()
+    msg["Subject"] = "⚠️ Intruder Alert!"
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = RECEIVER_EMAIL
+    msg.set_content("An unknown person has been detected by the surveillance system.")
+
+    with open(image_path, "rb") as img:
+        img_data = img.read()
+        msg.add_attachment(img_data, maintype='image', subtype='jpeg', filename="intruder.jpg")
+
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.send_message(msg)
+        print("📧 Alert email sent successfully!")
+
+def generate_frames():
+    cap = cv2.VideoCapture(0)
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        try:
+            result = DeepFace.find(img_path=frame, db_path="dataset", enforce_detection=False, silent=True)
+            identity = "Unknown"
+
+            if len(result) > 0 and not result[0].empty:
+                identity_path = result[0].iloc[0]['identity']
+                identity = os.path.basename(os.path.dirname(identity_path))
+
+            # Label the face
+            label = f"Detected: {identity}"
+            cv2.putText(frame, label, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+            if identity == "Unknown":
+                cv2.imwrite("intruder.jpg", frame)
+                send_email_alert("intruder.jpg")
+
+        except Exception as e:
+            print("Detection error:", e)
+
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/video')
+def video():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == "__main__":
+    app.run(debug=True)
