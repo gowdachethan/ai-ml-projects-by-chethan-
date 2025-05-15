@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Surveillance System</title>
+</head>
+<body>
+  <h2>🔍 AI Face Recognition Surveillance System</h2>
+  <img src="{{ url_for('video') }}" width="720" height="480">
+</body>
+</html>
